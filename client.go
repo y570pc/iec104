@@ -16,11 +16,11 @@ var (
 	contextTimeout    = 30 * time.Second
 	dialTimeout       = 5 * time.Second
 	testInterval      = 20 * time.Second
-	totalCallInterval = 15 * time.Minute
+	totalCallInterval = 1 * time.Minute
 	retryTimes        = 3 //存在备用服务器时，单个服务器重试次数
 )
 
-//Client 104客户端
+// Client 104客户端
 type Client struct {
 	address    string
 	subAddress string
@@ -37,7 +37,7 @@ type Client struct {
 	wg         *sync.WaitGroup
 }
 
-//NewClient 初始化客户端,连接失败，每隔10秒重试
+// NewClient 初始化客户端,连接失败，每隔10秒重试
 func NewClient(address string, logger *logrus.Logger, subAddress ...string) *Client {
 	subAddr := ""
 	if len(subAddress) == 1 && subAddress[0] != "" {
@@ -47,17 +47,17 @@ func NewClient(address string, logger *logrus.Logger, subAddress ...string) *Cli
 		address:    address,
 		subAddress: subAddr,
 		curAddress: address,
-		dataChan:   make(chan *APDU, 1),
+		dataChan:   make(chan *APDU, 10),
 		sendChan:   make(chan []byte, 1),
 		Logger:     logger,
 		wg:         new(sync.WaitGroup),
 	}
 }
 
-//Run 运行
+// Run 运行
 func (c *Client) Run(task func(*APDU)) {
 	go c.handleSignal()
-	//定时器，每15分钟发送一次总召唤
+	// 定时器，每15分钟发送一次总召唤
 	ticker := time.NewTicker(totalCallInterval)
 	for {
 		c.conn = c.dail()
@@ -75,7 +75,9 @@ func (c *Client) Run(task func(*APDU)) {
 				c.Logger.Info("每隔15分钟发送一次总召唤")
 				c.sendTotalCall()
 			case <-ctx.Done():
+				c.Logger.Info("中断循环")
 				break cronLoop
+
 			}
 		}
 		c.Logger.Info("等待goroutine退出")
@@ -88,10 +90,11 @@ func (c *Client) Run(task func(*APDU)) {
 		c.rsn = 0
 		c.ssn = 0
 		c.iFrameNum = 0
+
 	}
 }
 
-//建立tcp连接，支持重试和主备切换
+// 建立tcp连接，支持重试和主备切换
 func (c *Client) dail() net.Conn {
 	var conn net.Conn
 	var err error
@@ -121,7 +124,7 @@ func (c *Client) dail() net.Conn {
 	return conn
 }
 
-//Read 读数据
+// Read 读数据
 func (c *Client) read(ctx context.Context) {
 	c.Logger.Info("socket读协程启动")
 	defer func() {
@@ -142,7 +145,7 @@ func (c *Client) read(ctx context.Context) {
 	}
 }
 
-//Write 写数据
+// Write 写数据
 func (c *Client) write(ctx context.Context) {
 	c.Logger.Info("socket写协程启动")
 	defer func() {
@@ -163,7 +166,7 @@ func (c *Client) write(ctx context.Context) {
 	}
 }
 
-//handler 处理接收到的已解析数据
+// handler 处理接收到的已解析数据
 func (c *Client) handler(ctx context.Context, task func(c *APDU)) {
 	c.Logger.Info("数据处理协程启动")
 	defer func() {
@@ -182,7 +185,7 @@ func (c *Client) handler(ctx context.Context, task func(c *APDU)) {
 	}
 }
 
-//ParseData 解析接收到的数据
+// ParseData 解析接收到的数据
 func (c *Client) parseData(ctx context.Context) error {
 	handleErr := func(tag string, err error) {
 		c.Logger.Errorf("%s read socket读操作异常: %v", tag, err)
@@ -236,10 +239,10 @@ func (c *Client) parseData(ctx context.Context) error {
 	case IFrame:
 		c.incrRsn()
 		switch apdu.ASDU.TypeID {
-		case MEiNA1:
-			c.Logger.Info("接收到初始化结束，开始发送总召唤")
-			c.sendSFrame()
-			c.sendTotalCall()
+		// case MEiNA1:
+		// 	c.Logger.Info("接收到初始化结束，开始发送总召唤")
+		// 	c.sendSFrame()
+		// 	c.sendTotalCall()
 		case CIcNa1:
 			if apdu.ASDU.Cause == 7 {
 				c.Logger.Info("接收总召唤确认帧")
@@ -247,8 +250,8 @@ func (c *Client) parseData(ctx context.Context) error {
 			} else if apdu.ASDU.Cause == 10 {
 				c.Logger.Info("接收总召唤结束帧")
 				c.sendSFrame()
-				c.Logger.Info("发送电度总召唤")
-				c.sendElectricityTotalCall()
+				// c.Logger.Info("发送电度总召唤")
+				// c.sendElectricityTotalCall()
 			}
 		case CCiNa1:
 			if apdu.ASDU.Cause == 7 {
@@ -282,14 +285,15 @@ func (c *Client) parseData(ctx context.Context) error {
 	return nil
 }
 
-//sendUFrame 发送U帧
+// sendUFrame 发送U帧
 func (c *Client) sendUFrame(cmd [4]byte) {
 	data := convertBytes(convert4BytesToSlice(cmd))
 	c.Logger.Debugf("发送U帧: [% X]", data)
 	c.sendChan <- data
+
 }
 
-//sendSFrame 发送S帧
+// sendSFrame 发送S帧
 func (c *Client) sendSFrame() {
 	rsnBytes := parseLittleEndianUInt16(uint16(c.rsn << 1))
 	sendBytes := make([]byte, 0, 0)
@@ -300,24 +304,25 @@ func (c *Client) sendSFrame() {
 	c.sendChan <- data
 }
 
-//sendTotalCall 发送总召唤
+// sendTotalCall 发送总召唤
 func (c *Client) sendTotalCall() {
 	ssnBytes := parseLittleEndianUInt16(uint16(c.ssn << 1))
 	rsnBytes := parseLittleEndianUInt16(uint16(c.rsn << 1))
-	totalCallData := make([]byte, 0, 0)
+	totalCallData := make([]byte, 0)
 	totalCallData = append(totalCallData, ssnBytes...)
 	totalCallData = append(totalCallData, rsnBytes...)
 	totalCallData = append(totalCallData, 0x64, 0x01, 0x06, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x14)
 	data := convertBytes(totalCallData)
 	c.Logger.Debugf("发送总召唤: [% X]", data)
 	c.sendChan <- data
+	c.ssn = c.ssn + 1
 }
 
-//sendTotalCall 发送电度总召唤
+// sendElectricityTotalCall 发送电度总召唤
 func (c *Client) sendElectricityTotalCall() {
 	ssnBytes := parseLittleEndianUInt16(uint16(c.ssn << 1))
 	rsnBytes := parseLittleEndianUInt16(uint16(c.rsn << 1))
-	totalCallData := make([]byte, 0, 0)
+	totalCallData := make([]byte, 0)
 	totalCallData = append(totalCallData, ssnBytes...)
 	totalCallData = append(totalCallData, rsnBytes...)
 	totalCallData = append(totalCallData, 0x65, 0x01, 0x06, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x05)
@@ -326,7 +331,7 @@ func (c *Client) sendElectricityTotalCall() {
 	c.sendChan <- data
 }
 
-//incrRsn 增加rsn
+// incrRsn 增加rsn
 func (c *Client) incrRsn() {
 	c.rsn++
 	if c.rsn < 0 {
@@ -334,7 +339,7 @@ func (c *Client) incrRsn() {
 	}
 }
 
-//Close 结束程序
+// Close 结束程序
 func (c *Client) handleSignal() {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Kill, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)

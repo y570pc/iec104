@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	address := fmt.Sprintf("%s:%d", config.ServerHost, config.ServerPort)
+	address := fmt.Sprintf("%s:%d", "192.168.76.16", 2404)
 	subAddress := ""
 	if config.SubServerHost != "" && config.SubServerPort != 0 {
 		subAddress = fmt.Sprintf("%s:%d", config.SubServerHost, config.ServerPort)

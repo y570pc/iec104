@@ -9,11 +9,11 @@
             "type": "go",
             "request": "launch",
             "mode": "auto",
-            "program": "${fileDirname}",
+            "program": "example/client/main.go",
             "env": {
-                "SERVER_HOST":"192.168.0.105",
-                "SERVER_PORT":2404,
-                "DEBUG":true
+                "SERVER_HOST":"192.168.45.16",
+                "SERVER_PORT":"2404",
+                "DEBUG":"true"
             },
             "args": []
         }
